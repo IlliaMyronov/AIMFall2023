@@ -2,6 +2,7 @@
 
 import alpaca_trade_api as tradeapi
 from alpaca_trade_api import TimeFrame
+from datetime import datetime, timedelta
 import getpass
 import pandas as pd
 import numpy as np
@@ -15,10 +16,22 @@ api_secret = getpass.getpass(prompt='Enter your Alpaca API secret: ')
 base_url = 'https://paper-api.alpaca.markets'  # Use 'https://api.alpaca.markets' for live trading
 api = tradeapi.REST(api_key, api_secret, base_url, api_version='v2')
 
+# Get start and end dates
+def get_dates():
+    today = datetime.now()
+    end_date = today - timedelta(days=1)
+    start_date = end_date - timedelta(days=200)
+
+    # Format as strings
+    end_date_str = end_date.strftime("%Y-%m-%d")
+    start_date_str = start_date.strftime("%Y-%m-%d")
+
+    return start_date_str, end_date_str
+
 # Fetch historical price data using Alpaca API
 symbol = 'AAPL'
-historical_data = api.get_bars(symbol, TimeFrame.Day, "2022-11-14", "2023-11-14", adjustment='raw').df
-# TODO: make method for getting yesterdays date and 200 days before yesterday
+start_date_str, end_date_str = get_dates()
+historical_data = api.get_bars(symbol, TimeFrame.Day, start_date_str, end_date_str, adjustment='raw').df
 # TODO: test on previous historical data to see if it is making gains, or leave it running
 
 try:
@@ -32,7 +45,7 @@ print(historical_data)
 print("\n")
 
 # Trading strategy function
-def moving_average_crossover_strategy(data):
+def calculate_moving_averages(data):
     closing_prices = data['close']
     short_term_ma = np.mean(closing_prices[-50:])
     long_term_ma = np.mean(closing_prices[-200:])
@@ -46,7 +59,7 @@ holding_stock = False
 
 try:
     while True:
-        short_term_ma, long_term_ma = moving_average_crossover_strategy(historical_data)
+        short_term_ma, long_term_ma = calculate_moving_averages(historical_data)
         account_info = api.get_account()
         # Execute buy/sell orders based on moving average crossover
         if short_term_ma >  long_term_ma and not holding_stock:  # Buy
