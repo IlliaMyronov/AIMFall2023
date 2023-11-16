@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import time
 
-# Prompt the user for Alpaca API key and secret
+# Securely prompt the user for Alpaca API key and secret
 api_key = getpass.getpass(prompt='Enter your Alpaca API key: ')
 api_secret = getpass.getpass(prompt='Enter your Alpaca API secret: ')
 
@@ -16,11 +16,15 @@ api_secret = getpass.getpass(prompt='Enter your Alpaca API secret: ')
 base_url = 'https://paper-api.alpaca.markets'  # Use 'https://api.alpaca.markets' for live trading
 api = tradeapi.REST(api_key, api_secret, base_url, api_version='v2')
 
+# Moving averga time period - adjust as needed
+short_timeperiod = 10 # Original 50
+long_timeperiod = 50 # Original 200
+
 # Get start and end dates
 def get_dates():
     today = datetime.now()
     end_date = today - timedelta(days=1)
-    start_date = end_date - timedelta(days=200)
+    start_date = end_date - timedelta(days=long_timeperiod)
 
     # Format as strings
     end_date_str = end_date.strftime("%Y-%m-%d")
@@ -28,10 +32,9 @@ def get_dates():
 
     return start_date_str, end_date_str
 
-# Fetch historical price data using Alpaca API
+# Symbol to trade
 symbol = 'AAPL'
-start_date_str, end_date_str = get_dates()
-historical_data = api.get_bars(symbol, TimeFrame.Day, start_date_str, end_date_str, adjustment='raw').df
+
 # TODO: test on previous historical data to see if it is making gains, or leave it running
 
 try:
@@ -41,24 +44,22 @@ except tradeapi.rest.APIError as e:
     print(f"Login failed. Error: {e}")
 print("\n")
 
-print(historical_data)
-print("\n")
-
 # Trading strategy function
 def calculate_moving_averages(data):
     closing_prices = data['close']
-    short_term_ma = np.mean(closing_prices[-50:])
-    long_term_ma = np.mean(closing_prices[-200:])
+    short_term_ma = np.mean(closing_prices[-short_timeperiod:])
+    long_term_ma = np.mean(closing_prices[-long_timeperiod:])
     print(f'{symbol} - Short-term MA: {short_term_ma}, Long-term MA: {long_term_ma}')
     return short_term_ma, long_term_ma
 
 # Run the trading strategy
 close_positions_on_exit = False  # Set to True if you want to close all positions when the program stops
-
 holding_stock = False
-
 try:
     while True:
+        # Get real-time historical data
+        start_date_str, end_date_str = get_dates()
+        historical_data = api.get_bars(symbol, TimeFrame.Day, start_date_str, end_date_str, adjustment='raw').df
         short_term_ma, long_term_ma = calculate_moving_averages(historical_data)
         account_info = api.get_account()
         # Execute buy/sell orders based on moving average crossover
@@ -104,10 +105,11 @@ try:
                 else:
                     print('No position to sell or unreasonable sell order quantity. No sell order placed.')
 
-        # Implement risk management: Set a stop-loss sell order for the buy position
+        # Risk management: Stop-loss sell order for the buy position
         positions = api.list_positions()
         if holding_stock and positions:
-            stop_loss_price = float(positions[0].avg_entry_price) * 0.95  # Example: 5% stop-loss
+            stop_loss_price = float(positions[0].avg_entry_price) * 0.95  # 5% stop-loss
+            stop_loss_price = round(stop_loss_price, 2) # Round to 2 decimal places
             print(f'Set a stop-loss order at {stop_loss_price}')
             api.submit_order(
                 symbol=symbol,
