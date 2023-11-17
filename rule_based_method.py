@@ -16,26 +16,27 @@ api_secret = getpass.getpass(prompt='Enter your Alpaca API secret: ')
 base_url = 'https://paper-api.alpaca.markets'  # Use 'https://api.alpaca.markets' for live trading
 api = tradeapi.REST(api_key, api_secret, base_url, api_version='v2')
 
-# Moving averga time period - adjust as needed
+# Moving average time period - adjust as needed
 short_timeperiod = 10 # Original 50
 long_timeperiod = 50 # Original 200
 
+holding_stock = False
+
 # Get start and end dates
-def get_dates():
-    today = datetime.now()
-    end_date = today - timedelta(days=1)
-    start_date = end_date - timedelta(days=long_timeperiod)
-
+def get_date():
+    start_date = datetime.now() - timedelta(days=long_timeperiod)
     # Format as strings
-    end_date_str = end_date.strftime("%Y-%m-%d")
     start_date_str = start_date.strftime("%Y-%m-%d")
-
-    return start_date_str, end_date_str
+    return start_date_str
 
 # Symbol to trade
 symbol = 'AAPL'
 
-# TODO: test on previous historical data to see if it is making gains, or leave it running
+# Check if account already has position
+existing_positions = api.list_positions()
+for position in existing_positions:
+    if position.symbol == symbol:
+        holding_stock = True
 
 try:
     account_info = api.get_account()
@@ -54,12 +55,12 @@ def calculate_moving_averages(data):
 
 # Run the trading strategy
 close_positions_on_exit = False  # Set to True if you want to close all positions when the program stops
-holding_stock = False
+trailing_stop_percent = 0.10 # 10% stop loss
 try:
     while True:
         # Get real-time historical data
-        start_date_str, end_date_str = get_dates()
-        historical_data = api.get_bars(symbol, TimeFrame.Day, start_date_str, end_date_str, adjustment='raw').df
+        start_date_str = get_date()
+        historical_data = api.get_bars(symbol, TimeFrame.Day, start_date_str, adjustment='raw').df
         short_term_ma, long_term_ma = calculate_moving_averages(historical_data)
         account_info = api.get_account()
         # Execute buy/sell orders based on moving average crossover
@@ -105,22 +106,29 @@ try:
                 else:
                     print('No position to sell or unreasonable sell order quantity. No sell order placed.')
 
-        # Risk management: Stop-loss sell order for the buy position
+        # Risk management: Trailing stop-loss sell order for the buy position
         positions = api.list_positions()
-        if holding_stock and positions:
-            stop_loss_price = float(positions[0].avg_entry_price) * 0.95  # 5% stop-loss
-            stop_loss_price = round(stop_loss_price, 2) # Round to 2 decimal places
-            print(f'Set a stop-loss order at {stop_loss_price}')
-            api.submit_order(
-                symbol=symbol,
-                qty=int(positions[0].qty),
-                side='sell',
-                type='limit',
-                time_in_force='gtc',
-                limit_price=str(stop_loss_price),
-            )
+        for position in positions:
+            if position.symbol == symbol and holding_stock:
+                    current_price = float(api.get_latest_trade(symbol).price)
+                    entry_price = float(position.avg_entry_price)
+                    stop_loss_price = entry_price * (1 - trailing_stop_percent)
+                    stop_loss_price_rounded = round(stop_loss_price, 2)
 
-        time.sleep(60)  # Adjust the time interval as needed
+                    # Update stop price
+                    if current_price > stop_loss_price_rounded:
+                        print(f'Updating trailing stop for {symbol} to {stop_loss_price_rounded}')
+                        api.submit_order(
+                            symbol=symbol,
+                            qty=int(position.qty),
+                            side='sell',
+                            type='limit',
+                            time_in_force='gtc',
+                            limit_price=str(stop_loss_price_rounded),
+                        )
+                        holding_stock = False
+
+        time.sleep(10)  # Adjust the time interval as needed
 
 except KeyboardInterrupt:
     print("Program stopped by the user.")
