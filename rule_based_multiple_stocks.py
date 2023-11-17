@@ -60,6 +60,14 @@ amazon = Stock('AMZN')
 # List that stores all stocks to trade
 stocks = [apple, tesla, microsoft, google, amazon]
 
+# Checks if account already has a position on a stock
+existing_positions = api.list_positions()
+for position in existing_positions:
+    for stock in stocks:
+        if position.symbol == stock.getSymbol():
+            stock.bought()
+            print(f"Already holding {stock.getSymbol()}.")
+
 try:
     account_info = api.get_account()
     print("Login successful.")
@@ -77,7 +85,7 @@ def calculate_moving_averages(data, symbol):
 
 # Run strategy
 close_positions_on_exit = False  # Set to True if you want to close all positions when the program stops
-trailing_stop_percent = 0.02 # 2% trailing stop
+trailing_stop_percent = 0.03 # 3% trailing stop
 try:
     while True:
         for stock in stocks:
@@ -135,17 +143,18 @@ try:
                     current_price = float(api.get_latest_trade(stock.getSymbol()).price)
                     entry_price = float(position.avg_entry_price)
                     stop_loss_price = entry_price * (1 - trailing_stop_percent)
+                    stop_loss_price_rounded = round(stop_loss_price, 2)
 
                     # Update stop price
-                    if current_price > stop_loss_price:
-                        print(f'Updating trailing stop for {stock.getSymbol()} to {stop_loss_price}')
+                    if current_price > stop_loss_price_rounded:
+                        print(f'Updating trailing stop for {stock.getSymbol()} to {stop_loss_price_rounded}')
                         api.submit_order(
                             symbol=stock.getSymbol(),
                             qty=int(position.qty),
                             side='sell',
                             type='limit',
                             time_in_force='gtc',
-                            limit_price=str(stop_loss_price),
+                            limit_price=str(stop_loss_price_rounded),
                         )
 
             time.sleep(10)  # Adjust the time interval as needed, original 60
